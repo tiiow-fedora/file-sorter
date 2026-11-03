@@ -1,0 +1,9 @@
+*undo.json
+actions.csv
+config.json
+__pycache__/
+*.pyc
+*.log
+.env*
+!.env.example
+node_modules/

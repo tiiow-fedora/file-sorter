@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Sorter</title>
+<style>
+:root {
+  --bg: #111317; --panel: #1a1d23; --panel2: #22262e; --line: #2e333d; --text: #e6e8ec; --dim: #8b92a0;
+  --accent: #4fb3a9; --del: #e5534b; --move: #4f8fe5; --skip: #6b7280; --warn: #d9a441;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--dim); }
+button:disabled { opacity: .4; cursor: default; }
+button kbd { font: 11px ui-monospace, monospace; color: var(--dim); margin-left: 6px; }
+input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+header { display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header .grow { flex: 1; }
+#crumbs { display: flex; gap: 4px; align-items: center; color: var(--dim); overflow: hidden; }
+#crumbs a { color: var(--accent); cursor: pointer; text-decoration: none; white-space: nowrap; }
+#progress { color: var(--dim); white-space: nowrap; }
+#progress b { color: var(--text); }
+main { flex: 1; display: flex; min-height: 0; }
+aside { width: 340px; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+#listtools { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); align-items: center; color: var(--dim); font-size: 12px; }
+#list { overflow-y: auto; flex: 1; }
+.row { display: flex; gap: 8px; align-items: center; padding: 5px 10px; cursor: pointer; border-left: 3px solid transparent; }
+.row:hover { background: var(--panel); }
+.row.cur { background: var(--panel2); border-left-color: var(--accent); }
+.row .ic { width: 20px; text-align: center; }
+.row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .sz { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.row.deleted .nm, .row.moved .nm { text-decoration: line-through; color: var(--dim); }
+.badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; text-transform: uppercase; letter-spacing: .03em; }
+.badge.deleted { background: #4a1f1d; color: #ff9b94; }
+.badge.moved { background: #1d2f4a; color: #93bcff; }
+.badge.skipped { background: #2a2d33; color: var(--dim); }
+.badge.organized { background: #1d3a36; color: #8fe0d6; }
+#view { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#title { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+#title .bigic { font-size: 30px; }
+#title h1 { font-size: 17px; margin: 0; word-break: break-all; }
+#meta { color: var(--dim); font-size: 12px; margin-top: 2px; }
+#preview { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; min-height: 0; }
+#preview img.main, #preview video { max-width: 100%; max-height: 100%; object-fit: contain; background: #000; }
+#preview iframe { width: 100%; flex: 1; min-height: 400px; border: 1px solid var(--line); background: #fff; }
+#preview pre { align-self: stretch; margin: 0; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, Consolas, monospace; }
+.noprev { margin: auto; text-align: center; color: var(--dim); }
+.noprev .huge { font-size: 96px; }
+.grid { align-self: stretch; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.grid img { width: 100%; height: 100px; object-fit: cover; border-radius: 4px; background: var(--panel); }
+.kids { align-self: stretch; }
+.kid { display: flex; gap: 8px; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+.kid .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kid .sz { color: var(--dim); font-size: 12px; }
+#actions { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
+.bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#bDel { background: #3a1a19; border-color: var(--del); }
+#bMove { background: #19283d; border-color: var(--move); }
+#bDrill { background: #173230; border-color: var(--accent); }
+#moveTo { flex: 1; min-width: 220px; }
+.quick { background: var(--bg); }
+.quick .x { color: var(--dim); margin-left: 6px; }
+.quick .x:hover { color: var(--del); }
+.hint { color: var(--dim); font-size: 12px; }
+#toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 80vw; }
+#toast.show { opacity: 1; }
+#toast.err { border-color: var(--del); color: #ffb4ae; }
+#bPick { background: #19283d; border-color: var(--move); font-weight: 600; }
+.quick.recent { border-style: dashed; }
+#picker { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 4; }
+#picker.show { display: flex; }
+.pbox { width: min(900px, 94vw); height: min(620px, 88vh); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+.phead { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); gap: 10px; }
+.phead span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pbody { flex: 1; display: flex; min-height: 0; }
+#pkPlaces { width: 220px; border-right: 1px solid var(--line); overflow-y: auto; padding: 6px; }
+.psec { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 10px 6px 4px; }
+.pl { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 5px 8px; border-radius: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl:hover, .pd:hover { background: var(--panel2); }
+.pmain { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 8px; gap: 8px; }
+.pcrumb { display: flex; gap: 8px; align-items: center; }
+#pkPath { color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+#pkDirs { flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
+.pd { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--line); }
+.pd .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd button { padding: 2px 8px; font-size: 12px; opacity: 0; }
+.pd:hover button { opacity: 1; }
+.pfoot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: center; }
+.pfoot .grow { flex: 1; }
+#pkGo { background: #19283d; border-color: var(--move); font-weight: 600; }
+#busy { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; font-size: 16px; z-index: 5; }
+#busy.show { display: flex; }
+</style>
+</head>
+<body>
+<header>
+  <select id="root" title="Folder to sort"></select>
+  <button id="addRoot">Other folder…</button>
+  <nav id="crumbs"></nav>
+  <span class="grow"></span>
+  <span id="progress"></span>
+  <button id="bUndo">Undo<kbd>U</kbd></button>
+  <button id="bQuit" title="Stop File Sorter">Quit</button>
+</header>
+<main>
+  <aside>
+    <div id="listtools">
+      Sort
+      <select id="sort">
+        <option value="size">Biggest first</option>
+        <option value="name">Name</option>
+        <option value="old">Oldest first</option>
+        <option value="new">Newest first</option>
+        <option value="kind">Type</option>
+      </select>
+      <label><input type="checkbox" id="hideDone"> Hide done</label>
+    </div>
+    <div id="list"></div>
+  </aside>
+  <section id="view">
+    <div id="title"><span class="bigic" id="icon"></span><div><h1 id="name"></h1><div id="meta"></div></div></div>
+    <div id="preview"></div>
+    <div id="actions">
+      <div class="bar">
+        <button id="bDel">🗑 Delete<kbd>D</kbd></button>
+        <button id="bSkip">Skip / keep<kbd>S</kbd></button>
+        <button id="bPrev">Back<kbd>←</kbd></button>
+        <button id="bRename">Rename<kbd>R</kbd></button>
+        <button id="bDrill">Look inside folder<kbd>Enter</kbd></button>
+        <button id="bReveal">Show in Explorer<kbd>O</kbd></button>
+        <button id="bLaunch">Open file<kbd>P</kbd></button>
+      </div>
+      <div class="bar">
+        <button id="bPick">📁 Move to folder…<kbd>M</kbd></button>
+        <input id="moveTo" list="destList" placeholder="…or type a subfolder name here (e.g. Minecraft)">
+        <datalist id="destList"></datalist>
+        <button id="bMove">Move<kbd>T</kbd></button>
+        <button id="bPin" title="Save as a quick destination">📌 Pin</button>
+      </div>
+      <div class="bar" id="quick"></div>
+      <div class="hint">Delete sends to the Recycle Bin. Number keys 1–9 = pinned folders. Typing a plain name moves it into that subfolder here, creating it if needed.</div>
+    </div>
+  </section>
+</main>
+<div id="picker">
+  <div class="pbox">
+    <div class="phead"><span>Move <b id="pkItem"></b> to…</span><button id="pkClose" title="Close (Esc)">✕</button></div>
+    <div class="pbody">
+      <div id="pkPlaces"></div>
+      <div class="pmain">
+        <div class="pcrumb"><button id="pkUp" title="Up (Backspace)">⬆ Up</button><span id="pkPath"></span></div>
+        <input id="pkFilter" placeholder="Type to filter folders…  (Enter = move here, Esc = close)" autocomplete="off">
+        <div id="pkDirs"></div>
+      </div>
+    </div>
+    <div class="pfoot">
+      <button id="pkNew">➕ New folder here</button>
+      <button id="pkPin">📌 Pin this folder</button>
+      <span class="grow"></span>
+      <button id="pkGo">Move here<kbd>Enter</kbd></button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="busy"><span id="busyMsg">Working…</span></div>
+<script>
+"use strict";
+const T = new URLSearchParams(location.search).get("t");
+const $ = id => document.getElementById(id);
+const ICON = { folder: "📁", image: "🖼️", video: "🎬", video_np: "🎬", audio: "🎵", pdf: "📕", text: "📝", disk: "💿",
+  archive: "📦", installer: "⚙️", document: "📄", mod: "🧩", model: "🧊", font: "🔤", link: "🔗", other: "❔" };
+const KIND_ORDER = Object.keys(ICON);
+
+const S = { root: null, stack: [], items: [], view: [], idx: -1, status: new Map(), dests: [], freed: 0, measuring: 0 };
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Token": T }, body: JSON.stringify(body) };
+  const r = await fetch(path + (path.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(T), opts);
+  let j; try { j = await r.json(); } catch { j = {}; }
+  if (!r.ok || j.error) throw new Error(j.error || r.statusText);
+  return j;
+}
+const q = p => encodeURIComponent(p);
+const fileUrl = p => "/file?path=" + q(p) + "&t=" + q(T);
+function fmt(b) {
+  if (b == null) return "…";
+  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return (i ? b.toFixed(b < 10 ? 1 : 0) : b) + " " + u[i];
+}
+function ago(t) {
+  const d = (Date.now() / 1000 - t) / 86400;
+  if (d < 1) return "today"; if (d < 60) return Math.round(d) + " days ago";
+  if (d < 730) return Math.round(d / 30) + " months ago"; return (d / 365).toFixed(1) + " years ago";
+}
+const base = p => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+const parent = p => p.replace(/[\\/]+$/, "").replace(/[\\/][^\\/]*$/, "");
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let toastTimer;
+function toast(msg, err) {
+  const t = $("toast"); t.textContent = msg; t.className = "show" + (err ? " err" : "");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = "", err ? 5000 : 2500);
+}
+function busy(msg) { $("busyMsg").textContent = msg || ""; $("busy").className = msg ? "show" : ""; }
+const cwd = () => S.stack[S.stack.length - 1];
+const cur = () => S.view[S.idx];
+const st = it => S.status.get(it.path);
+const gone = it => ["deleted", "moved"].includes(st(it)?.s);
+
+// ------------------------------------------------------------ loading
+
+async function init() {
+  const s = await api("/api/state");
+  S.dests = s.dests;
+  for (const r of s.defaultRoots) addRootOption(r);
+  await refreshRecent();
+  await openRoot(s.start);
+}
+function addRootOption(p) {
+  if ([...$("root").options].some(o => o.value === p)) return;
+  const o = el("option", null, base(p)); o.value = p; o.title = p; $("root").append(o);
+}
+async function openRoot(p) { $("root").value = p; S.root = p; S.stack = [p]; await loadDir(); }
+async function loadDir(focusPath) {
+  busy("Loading…");
+  try {
+    const d = await api("/api/list?path=" + q(cwd()));
+    S.items = d.items;
+  } catch (e) { busy(); return toast(e.message, true); }
+  renderCrumbs(); refreshDatalist();
+  const dirs = S.items.filter(i => i.dir);
+  let done = 0;
+  const work = async () => {
+    while (dirs.length) {
+      const it = dirs.shift();
+      try { const r = await api("/api/dirsize?path=" + q(it.path)); it.size = r.size; it.files = r.files; } catch { it.size = 0; }
+      busy(`Measuring folders… ${++done}/${S.items.filter(i => i.dir).length}`);
+    }
+  };
+  await Promise.all([work(), work(), work()]);
+  busy();
+  applySort();
+  const fi = focusPath ? S.view.findIndex(i => i.path === focusPath) : -1;
+  if (fi >= 0) show(fi); else nextOpen(-1);
+}
+function applySort() {
+  const keep = cur()?.path;
+  const by = $("sort").value;
+  const cmp = {
+    size: (a, b) => (b.size || 0) - (a.size || 0),
+    name: (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+    old: (a, b) => a.mtime - b.mtime, new: (a, b) => b.mtime - a.mtime,
+    kind: (a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (b.size || 0) - (a.size || 0),
+  }[by];
+  S.view = [...S.items].sort(cmp).filter(i => !$("hideDone").checked || !st(i) || i.path === keep);
+  S.idx = keep ? S.view.findIndex(i => i.path === keep) : S.idx;
+  renderList();
+}
+
+// ------------------------------------------------------------ rendering
+
+function renderCrumbs() {
+  const c = $("crumbs"); c.textContent = "";
+  S.stack.forEach((p, i) => {
+    if (i) c.append(el("span", null, "›"));
+    const a = el("a", null, i ? base(p) : p); a.title = p;
+    a.onclick = () => { const back = S.stack[i + 1]; S.stack = S.stack.slice(0, i + 1); loadDir(back); };
+    c.append(a);
+  });
+}
+function renderList() {
+  const L = $("list"); L.textContent = "";
+  S.view.forEach((it, i) => {
+    const s = st(it);
+    const r = el("div", "row" + (i === S.idx ? " cur" : "") + (s ? " " + s.s : ""));
+    r.append(el("span", "ic", ICON[it.kind] || "❔"), el("span", "nm", it.name));
+    if (s) r.append(el("span", "badge " + s.s, s.s));
+    r.append(el("span", "sz", fmt(it.size)));
+    r.title = it.name;
+    r.onclick = () => show(i);
+    L.append(r);
+  });
+  const cr = L.children[S.idx]; if (cr) cr.scrollIntoView({ block: "nearest" });
+  renderProgress();
+}
+function renderProgress() {
+  const done = S.items.filter(st).length;
+  const p = $("progress"); p.textContent = "";
+  p.append(el("b", null, `${done} / ${S.items.length}`), " done here · ", el("b", null, fmt(S.freed)), " freed this session");
+}
+function renderQuick() {
+  const Q = $("quick"); Q.textContent = "";
+  S.dests.forEach((d, i) => {
+    const b = el("button", "quick", (i + 1) + "  " + (base(d) || d)); b.title = "Move to " + d;
+    b.onclick = () => doMove(d);
+    const x = el("span", "x", "✕"); x.title = "Unpin";
+    x.onclick = async ev => { ev.stopPropagation(); S.dests.splice(i, 1); await saveDests(); };
+    b.append(x); Q.append(b);
+  });
+  if (!S.dests.length) Q.append(el("span", "hint", "Pin destinations you use a lot; they get number keys 1–9."));
+  const pinned = new Set(S.dests.map(d => d.toLowerCase()));
+  for (const d of (S.recent || []).filter(d => !pinned.has(d.toLowerCase())).slice(0, 5)) {
+    const b = el("button", "quick recent", "🕘 " + (base(d) || d)); b.title = "Recently used: " + d;
+    b.onclick = () => doMove(d); Q.append(b);
+  }
+  refreshDatalist();
+}
+async function refreshRecent() {
+  try { const pl = await api("/api/places"); S.places = pl; S.recent = pl.recent; } catch {}
+  renderQuick();
+}
+
+// ------------------------------------------------------------ folder picker
+
+const PK = { path: null, dirs: [], up: null };
+const joinPath = (a, b) => a.replace(/[\\/]+$/, "") + "\\" + b;
+const pickerOpen = () => $("picker").classList.contains("show");
+async function openPicker() {
+  const it = cur(); if (!it || gone(it)) return;
+  $("pkItem").textContent = it.name;
+  $("picker").classList.add("show");
+  await refreshRecent();
+  renderPlaces();
+  await pkGo(cwd());
+  $("pkFilter").focus();
+}
+function closePicker() { $("picker").classList.remove("show"); }
+function renderPlaces() {
+  const P = $("pkPlaces"); P.textContent = "";
+  const sec = (title, items) => {
+    if (!items.length) return;
+    P.append(el("div", "psec", title));
+    for (const i of items) {
+      const b = el("button", "pl", (i.icon || "📁") + "  " + i.name); b.title = i.path;
+      b.onclick = () => pkGo(i.path); P.append(b);
+    }
+  };
+  const pl = S.places || { user: [], drives: [], nas: [], recent: [] };
+  sec("TrueNAS", pl.nas);
+  sec("Pinned", S.dests.filter(d => /^([a-z]:|\\\\)/i.test(d)).map(d => ({ name: base(d) || d, path: d, icon: "📌" })));
+  sec("Recent", pl.recent.map(d => ({ name: base(d) || d, path: d, icon: "🕘" })));
+  sec("This PC", pl.user);
+  sec("Drives", pl.drives);
+}
+async function pkGo(p) {
+  try {
+    const r = await api("/api/browse?path=" + q(p));
+    Object.assign(PK, { path: r.path, dirs: r.dirs, up: r.up, blocked: r.blocked });
+    $("pkFilter").value = "";
+    renderDirs();
+  } catch (e) { toast(e.message, true); }
+}
+function renderDirs() {
+  $("pkPath").textContent = PK.path;
+  $("pkPath").title = PK.path;
+  $("pkUp").disabled = !PK.up;
+  $("pkGo").disabled = !!PK.blocked;
+  const f = $("pkFilter").value.trim().toLowerCase();
+  const D = $("pkDirs"); D.textContent = "";
+  const list = PK.dirs.filter(d => !f || d.toLowerCase().includes(f));
+  if (!list.length) D.append(el("div", "hint", f ? "  No folders match. Press Enter to move into the current folder." : "  (no subfolders)"));
+  for (const d of list) {
+    const row = el("div", "pd"); row.title = "Open " + d;
+    row.append(el("span", null, "📁"), el("span", "nm", d));
+    const go = el("button", null, "Move here"); go.title = "Move straight into " + d;
+    go.onclick = ev => { ev.stopPropagation(); pkMove(joinPath(PK.path, d)); };
+    row.append(go);
+    row.onclick = () => pkGo(joinPath(PK.path, d));
+    D.append(row);
+  }
+}
+async function pkMove(dest) {
+  if (!dest || PK.blocked) return;
+  closePicker();
+  await doMove(dest);
+  refreshRecent();
+}
+$("bPick").onclick = openPicker;
+$("pkClose").onclick = closePicker;
+$("picker").onclick = e => { if (e.target === $("picker")) closePicker(); };
+$("pkUp").onclick = () => PK.up && pkGo(PK.up);
+$("pkGo").onclick = () => pkMove(PK.path);
+$("pkFilter").oninput = renderDirs;
+$("pkFilter").addEventListener("keydown", e => {
+  if (e.key === "Escape") { e.preventDefault(); closePicker(); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    const f = $("pkFilter").value.trim().toLowerCase();
+    const hits = f ? PK.dirs.filter(d => d.toLowerCase().includes(f)) : [];
+    if (hits.length === 1) pkGo(joinPath(PK.path, hits[0]));  // filter narrowed to one: open it
+    else pkMove(PK.path);
+  }
+  else if (e.key === "Backspace" && !$("pkFilter").value && PK.up) { e.preventDefault(); pkGo(PK.up); }
+});
+$("pkNew").onclick = async () => {
+  const name = prompt("New folder name (created inside " + PK.path + "):"); if (!name) return;
+  try { const r = await api("/api/mkdir", { parent: PK.path, name }); await pkGo(r.path); toast("Created " + name); }
+  catch (e) { toast(e.message, true); }
+  $("pkFilter").focus();
+};
+$("pkPin").onclick = async () => {
+  if (S.dests.some(d => d.toLowerCase() === PK.path.toLowerCase())) return toast("Already pinned");
+  if (S.dests.length >= 9) return toast("You can pin up to 9. Unpin one first.", true);
+  S.dests.push(PK.path); await saveDests(); renderPlaces(); toast("Pinned " + PK.path);
+};
+function refreshDatalist() {
+  const D = $("destList"); D.textContent = "";
+  const opts = new Set([...S.dests, ...S.items.filter(i => i.dir && !gone(i)).map(i => i.name)]);
+  for (const v of opts) { const o = el("option"); o.value = v; D.append(o); }
+}
+
+async function show(i) {
+  if (i < 0 || i >= S.view.length) return;
+  S.idx = i; renderList();
+  const it = cur(), s = st(it);
+  $("icon").textContent = ICON[it.kind] || "❔";
+  $("name").textContent = it.name;
+  $("meta").textContent = [it.dir ? "Folder" : (it.name.includes(".") ? it.name.split(".").pop().toUpperCase() + " file" : "File"),
+    fmt(it.size) + (it.files != null ? ` in ${it.files} files` : ""), "modified " + ago(it.mtime)].join(" · ");
+  const P = $("preview"); P.textContent = "";
+  const isGone = gone(it);
+  for (const id of ["bDel", "bRename", "bMove", "bReveal", "bLaunch", "bDrill"]) $(id).disabled = isGone;
+  $("bDrill").style.display = it.dir ? "" : "none";
+  $("bLaunch").style.display = it.dir ? "none" : "";
+  if (isGone) {
+    const n = el("div", "noprev"); n.append(el("div", "huge", s.s === "deleted" ? "🗑" : "📤"),
+      el("div", null, s.s === "deleted" ? "Sent to the Recycle Bin." : "Moved to " + s.to));
+    return P.append(n);
+  }
+  P.append(el("div", "hint", "Loading preview…"));
+  let inf;
+  try { inf = await api("/api/info?path=" + q(it.path)); } catch (e) { P.textContent = ""; return P.append(el("div", "noprev", e.message)); }
+  if (cur() !== it) return;  // user moved on while loading
+  P.textContent = "";
+  const url = fileUrl(it.path);
+  if (inf.preview === "image") { const im = el("img", "main"); im.src = url; im.alt = it.name; P.append(im); }
+  else if (inf.preview === "video") {
+    const v = el("video"); v.controls = true; v.preload = "metadata"; v.src = url;
+    v.onerror = () => { P.textContent = ""; P.append(noPrev(it, "This video's format can't play in the browser. Use Open file.")); };
+    P.append(v);
+  }
+  else if (inf.preview === "audio") {
+    const a = el("audio"); a.controls = true; a.src = url;
+    const n = el("div", "noprev"); n.append(el("div", "huge", "🎵"), a); P.append(n);
+  }
+  else if (inf.preview === "pdf") { const f = el("iframe"); f.src = url; P.append(f); }
+  else if (inf.preview === "text") { P.append(el("pre", null, inf.text + (inf.truncated ? "\n\n… (only the first 100 KB shown)" : ""))); }
+  else if (inf.preview === "zip") {
+    P.append(el("div", "hint", `Archive with ${inf.entries.length + inf.more} entries, ${fmt(inf.unpacked)} unpacked`));
+    const k = el("div", "kids");
+    for (const e of inf.entries) { const r = el("div", "kid"); r.append(el("span", "nm", e.name), el("span", "sz", fmt(e.size))); k.append(r); }
+    if (inf.more) k.append(el("div", "hint", `…and ${inf.more} more`));
+    P.append(k);
+  }
+  else if (inf.preview === "folder") {
+    it.size = inf.size; it.files = inf.files;
+    const imgs = inf.children.filter(c => c.kind === "image").slice(0, 12);
+    if (imgs.length) {
+      const g = el("div", "grid");
+      for (const c of imgs) { const im = el("img"); im.loading = "lazy"; im.src = fileUrl(c.path); im.title = c.name; g.append(im); }
+      P.append(g);
+    }
+    if (!inf.children.length) P.append(el("div", "noprev", "Empty folder"));
+    const k = el("div", "kids");
+    for (const c of inf.children) { const r = el("div", "kid"); r.append(el("span", null, ICON[c.kind] || "❔"), el("span", "nm", c.name), el("span", "sz", c.dir ? "" : fmt(c.size))); k.append(r); }
+    if (inf.more) k.append(el("div", "hint", `…and ${inf.more} more`));
+    P.append(k);
+  }
+  else P.append(noPrev(it, it.kind === "video_np" ? "This video format can't play in the browser. Use Open file." : "No preview for this kind of file."));
+}
+function noPrev(it, msg) {
+  const n = el("div", "noprev");
+  n.append(el("div", "huge", ICON[it.kind] || "❔"), el("div", null, msg));
+  return n;
+}
+
+// ------------------------------------------------------------ navigation
+
+function nextOpen(from) {
+  const n = S.view.length;
+  for (let k = 1; k <= n; k++) { const i = (from + k + n) % n; if (!st(S.view[i])) return show(i); }
+  // everything handled
+  S.idx = -1; renderList();
+  $("icon").textContent = "🎉"; $("name").textContent = "Everything in this folder is handled";
+  $("meta").textContent = fmt(S.freed) + " freed this session. Empty the Recycle Bin to actually get the space back.";
+  $("preview").textContent = "";
+  for (const id of ["bDel", "bRename", "bMove", "bReveal", "bLaunch", "bDrill"]) $(id).disabled = true;
+}
+function mark(it, s) { S.status.set(it.path, s); renderList(); refreshDatalist(); }
+
+// ------------------------------------------------------------ actions
+
+// A playing/buffered preview holds the file open on the server; drop it before
+// anything tries to move, rename or delete the file.
+async function releasePreview() {
+  const P = $("preview");
+  for (const m of P.querySelectorAll("video, audio")) { m.pause(); m.removeAttribute("src"); m.load(); }
+  for (const f of P.querySelectorAll("iframe")) f.src = "about:blank";
+  for (const im of P.querySelectorAll("img")) im.removeAttribute("src");
+  await new Promise(r => setTimeout(r, 150));
+}
+
+async function doDelete() {
+  const it = cur(); if (!it || gone(it)) return;
+  busy("Sending to Recycle Bin…");
+  await releasePreview();
+  try { const r = await api("/api/delete", { path: it.path }); S.freed += r.freed; mark(it, { s: "deleted" }); toast("Recycled " + it.name); nextOpen(S.idx); }
+  catch (e) { toast(e.message, true); show(S.idx); }
+  finally { busy(); }
+}
+function doSkip() { const it = cur(); if (!it) return; if (!st(it)) mark(it, { s: "skipped" }); nextOpen(S.idx); }
+async function doMove(dest) {
+  const it = cur(); if (!it || gone(it)) return;
+  dest = (dest ?? $("moveTo").value).trim();
+  if (!dest) { $("moveTo").focus(); return toast("Type where to move it, or click a pinned destination.", true); }
+  busy("Moving…");
+  await releasePreview();
+  try {
+    const r = await api("/api/move", { path: it.path, dest, cwd: cwd() });
+    if (r.offDrive) S.freed += it.size || 0;
+    mark(it, { s: "moved", to: r.destDir });
+    // organizing into a subfolder here: list that folder but don't ask about it again
+    if (parent(r.destDir).toLowerCase() === cwd().toLowerCase()) {
+      let f = S.items.find(i => i.path.toLowerCase() === r.destDir.toLowerCase());
+      if (!f) { f = { name: base(r.destDir), path: r.destDir, dir: true, size: 0, files: 0, mtime: Date.now() / 1000, kind: "folder" }; S.items.push(f); }
+      f.size = (f.size || 0) + (it.size || 0);
+      if (!st(f)) S.status.set(f.path, { s: "organized" });
+      applySort();
+    }
+    toast((r.created ? "Created folder and moved to " : "Moved to ") + r.destDir);
+    refreshRecent();
+    $("moveTo").value = ""; $("moveTo").blur();
+    nextOpen(S.idx);
+  } catch (e) { toast(e.message, true); show(S.idx); }
+  finally { busy(); }
+}
+async function doRename() {
+  const it = cur(); if (!it || gone(it)) return;
+  const dot = it.dir ? -1 : it.name.lastIndexOf(".");
+  const ext = dot > 0 ? it.name.slice(dot) : "", stem = ext ? it.name.slice(0, dot) : it.name;
+  const name = prompt(ext ? `New name (${ext} is kept automatically):` : "New name:", stem);
+  if (!name || name === stem || name === it.name) return;
+  await releasePreview();
+  try {
+    const r = await api("/api/rename", { path: it.path, name });
+    const s = st(it); S.status.delete(it.path);
+    it.path = r.to; it.name = base(r.to); if (s) S.status.set(it.path, s);
+    applySort(); show(S.idx); toast("Renamed");
+  } catch (e) { toast(e.message, true); show(S.idx); }
+}
+async function doUndo() {
+  busy("Undoing…");
+  try {
+    const op = await api("/api/undo", {});
+    if (op.type === "move") {
+      S.status.delete(op.from);
+      if (op.createdDir) S.status.delete(op.createdDir);
+      await loadDir(op.from);  // re-list: an emptied organize folder is gone again
+      toast("Moved back: " + base(op.from));
+    } else {
+      const it = S.items.find(i => i.path === op.to);
+      if (it) { it.path = op.from; it.name = base(op.from); applySort(); show(S.view.indexOf(it)); }
+      toast("Rename undone");
+    }
+  } catch (e) { toast(e.message, true); }
+  finally { busy(); }
+}
+async function saveDests() { try { S.dests = (await api("/api/dests", { dests: S.dests })).dests; } catch (e) { toast(e.message, true); } renderQuick(); }
+async function doPin() {
+  const v = $("moveTo").value.trim();
+  if (!v) return toast("Type a destination first, then pin it.", true);
+  if (S.dests.length >= 9) return toast("You can pin up to 9. Unpin one first.", true);
+  if (!S.dests.includes(v)) { S.dests.push(v); await saveDests(); toast("Pinned " + v); }
+}
+function drill() { const it = cur(); if (it?.dir && !gone(it)) { S.stack.push(it.path); loadDir(); } }
+
+$("bDel").onclick = doDelete; $("bSkip").onclick = doSkip; $("bPrev").onclick = () => show(S.idx - 1);
+$("bRename").onclick = doRename; $("bMove").onclick = () => doMove(); $("bPin").onclick = doPin; $("bUndo").onclick = doUndo;
+$("bDrill").onclick = drill;
+$("bReveal").onclick = () => cur() && api("/api/reveal", { path: cur().path }).catch(e => toast(e.message, true));
+$("bLaunch").onclick = () => cur() && api("/api/launch", { path: cur().path }).catch(e => toast(e.message, true));
+$("sort").onchange = applySort; $("hideDone").onchange = applySort;
+$("root").onchange = () => openRoot($("root").value);
+$("addRoot").onclick = async () => {
+  const p = prompt("Full path of the folder to sort (e.g. D:\\Stuff):"); if (!p) return;
+  try { const r = await api("/api/addroot", { path: p }); addRootOption(r.root); openRoot(r.root); } catch (e) { toast(e.message, true); }
+};
+$("bQuit").onclick = async () => { if (!confirm("Stop File Sorter?")) return; try { await api("/api/quit", {}); } catch {} document.body.textContent = "File Sorter stopped. You can close this tab."; };
+$("moveTo").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); doMove(); }
+  if (e.key === "Escape") $("moveTo").blur();
+});
+document.addEventListener("keydown", e => {
+  if (pickerOpen() || e.target.matches("input, select, textarea") || e.ctrlKey || e.altKey || e.metaKey || $("busy").className) return;
+  const k = e.key.toLowerCase();
+  const map = { d: doDelete, s: doSkip, arrowright: doSkip, arrowleft: () => show(S.idx - 1), arrowdown: () => show(S.idx + 1), arrowup: () => show(S.idx - 1),
+    r: doRename, u: doUndo, enter: drill, o: () => $("bReveal").click(), p: () => $("bLaunch").click(),
+    m: openPicker, t: () => $("moveTo").focus(), backspace: () => { if (S.stack.length > 1) { const back = S.stack.pop(); loadDir(back); } } };
+  if (map[k]) { e.preventDefault(); map[k](); return; }
+  if (/^[1-9]$/.test(k) && S.dests[+k - 1]) { e.preventDefault(); doMove(S.dests[+k - 1]); }
+});
+init().catch(e => toast(e.message, true));
+</script>
+</body>
+</html>
